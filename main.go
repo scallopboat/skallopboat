@@ -133,10 +133,13 @@ func handleEvent(e fsnotify.Event) error {
 		copyToPod(e.Name)
 	case fsnotify.Write:
 		fmt.Printf("Write %#v\n", e)
+		copyToPod(e.Name)
 	case fsnotify.Remove:
 		fmt.Printf("Remove %#v\n", e)
+		deleteFromPod(e.Name)
 	case fsnotify.Rename:
 		fmt.Printf("Rename %#v\n", e)
+		deleteFromPod(e.Name)
 	}
 
 	return nil
@@ -199,23 +202,19 @@ func copyToPod(filePath string) error {
 	_, err = exec(cmd)
 
 	if err != nil {
-		fmt.Println("ERROR: Destination directory may be invalid")
+		fmt.Println("ERROR: Copy failed")
 		panic(err.Error())
 	}
 
 	return nil
 }
 
-func deleteFromPod(destDir string, file string) error {
+func deleteFromPod(filePath string) error {
 
-	//TODO Add param to give the option of creating the dir if it doesn't exist
+	filename := strings.Replace(filePath, sourceDir, "", 1)
+
 	cmd := []string{"/bin/sh", "-c",
-		"if [ -d \"" + destDir + "\" ];\n" + `
-		then
-		return 0
-		else
-		return 1
-		fi`}
+		"rm '" + destDir + filename + "'"}
 
 	_, err := exec(cmd)
 
