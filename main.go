@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/fsnotify/fsnotify"
 	k8score "k8s.io/api/core/v1"
@@ -23,12 +25,14 @@ var watcher *fsnotify.Watcher
 var clientset *kubernetes.Clientset
 var targetPod *k8score.Pod
 var config *rest.Config
+var sourceDir string
+var destDir string
 
 // main
 func main() {
 
-	sourceDir := flag.String("source", "/home/scallopboat/tempWatch", "Full path on local file system")
-	destDir := flag.String("dest", "/tmp", "Full path on remote pod file system")
+	src := flag.String("source", "/home/scallopboat/tempWatch", "Full path on local file system")
+	dest := flag.String("dest", "/tmp", "Full path on remote pod file system")
 	pod := flag.String("pod", "example-memcached-c88c4dc9f-r5v8l", "Pod name")
 	namespace := flag.String("n", "default", "namespace")
 
@@ -42,7 +46,10 @@ func main() {
 
 	flag.Parse()
 
-	fmt.Println(*sourceDir, *destDir, *pod, *namespace, *kubeconfig)
+	fmt.Println(*src, *dest, *pod, *namespace, *kubeconfig)
+
+	sourceDir = *src
+	destDir = *dest
 
 	var err error
 	config, err = clientcmd.BuildConfigFromFlags("", *kubeconfig)
@@ -79,8 +86,7 @@ func main() {
 	}
 
 	// validate the dest dir exists
-	checkContainerDir(*destDir)
-	//TODO Validate pod name, namespace, destDir
+	checkContainerDir(destDir)
 
 	// creates a new file watcher
 	watcher, _ = fsnotify.NewWatcher()
@@ -88,14 +94,14 @@ func main() {
 
 	// starting at the root of the project, walk each file/directory searching for
 	// directories
-	if _, err := os.Stat(*sourceDir); os.IsNotExist(err) {
+	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
 		fmt.Println("Directory doesn't exist", err)
 		return
 	}
 
 	// TODO Before monitoring, need to sync the entire dir structure to remote
 
-	if err := filepath.Walk(*sourceDir, watchDir); err != nil {
+	if err := filepath.Walk(sourceDir, watchDir); err != nil {
 		fmt.Println("ERROR", err)
 		return
 	}
@@ -124,6 +130,7 @@ func handleEvent(e fsnotify.Event) error {
 	switch e.Op {
 	case fsnotify.Create:
 		fmt.Printf("Create %#v\n", e)
+		copyToPod(e.Name)
 	case fsnotify.Write:
 		fmt.Printf("Write %#v\n", e)
 	case fsnotify.Remove:
@@ -159,6 +166,51 @@ func checkContainerDir(dir string) error {
 	//TODO Add param to give the option of creating the dir if it doesn't exist
 	cmd := []string{"/bin/sh", "-c",
 		"if [ -d \"" + dir + "\" ];\n" + `
+		then
+		return 0
+		else
+		return 1
+		fi`}
+
+	_, err := exec(cmd)
+
+	if err != nil {
+		fmt.Println("ERROR: Destination directory may be invalid")
+		panic(err.Error())
+	}
+
+	return nil
+}
+
+func copyToPod(filePath string) error {
+
+	//TODO Add param to give the option of creating the dir if it doesn't exist
+	dat, err := ioutil.ReadFile(filePath)
+	filename := strings.Replace(filePath, sourceDir, "", 1)
+	if err != nil {
+		panic(err)
+	}
+
+	data := strings.Replace(string(dat), "\\", "\\\\", 1)
+
+	cmd := []string{"/bin/sh", "-c",
+		"printf \"" + data + "\" > '" + destDir + filename + "'"}
+
+	_, err = exec(cmd)
+
+	if err != nil {
+		fmt.Println("ERROR: Destination directory may be invalid")
+		panic(err.Error())
+	}
+
+	return nil
+}
+
+func deleteFromPod(destDir string, file string) error {
+
+	//TODO Add param to give the option of creating the dir if it doesn't exist
+	cmd := []string{"/bin/sh", "-c",
+		"if [ -d \"" + destDir + "\" ];\n" + `
 		then
 		return 0
 		else
@@ -214,78 +266,10 @@ func exec(command []string) (string, error) {
 		Stderr: &stderr,
 		Tty:    false,
 	})
+
 	if err != nil {
 		panic(err)
 	}
 
 	return stdout.String(), nil
 }
-
-/*
-func checkContainerDir(config string, destDir string, targetPod *k8score.Pod) error {
-
-	config := &restclient.Config{
-		Host: "http://192.168.8.175:8080",
-		Insecure: true,
-	}
-
-	config.ContentConfig.GroupVersion = &api.Unversioned
-	config.ContentConfig.NegotiatedSerializer = api.Codecs
-
-	restClient, err := restclient.RESTClientFor(config)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	req := restClient.Post().Resource("pods").Name("wordpress-mysql-213049546-29s7d").Namespace("default").SubResource("exec").Param("container", "mysql")
-	req.VersionedParams(&api.PodExecOptions{
-		Container: "mysql",
-		Command:   []string{"ls"},
-		Stdin:     true,
-		Stdout:    true,
-	}, api.ParameterCodec)
-
-	exec, err := remotecommand.NewExecutor(config, "POST", req.URL())
-
-		if err != nil {
-			panic(err.Error())
-		}
-
-	sopt := remotecommand.StreamOptions{
-		SupportedProtocols: remotecommandserver.SupportedStreamingProtocols,
-		Stdin:              os.Stdin,
-		Stdout: os.Stdout,
-		Stderr: os.Stderr,
-		Tty:    false,
-	}
-
-	err = exec.Stream(sopt)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	return nil
-}
-
-func copyToContainer(config string, srcFile string, destFile string, targetPod k8score.Pod) error {
-	cfg := kube.Config{
-		Kubeconfig: config,
-		Image:      targetPod.Spec.Containers[0].Image,
-		Name:       targetPod.ObjectMeta.Name,
-		Namespace:  targetPod.ObjectMeta.Namespace,
-	}
-
-	// also sleeping for a couple of seconds
-	// if the pod completes too fast, we don't have time to attach to it
-
-	cmd := kube.Command(cfg, "/bin/sh", "-c", "cat", srcFile, ">", destFile)
-	cmd.Stdout = os.Stdout
-
-	err := cmd.Run()
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-*/
