@@ -20,7 +20,6 @@ import (
 	"k8s.io/client-go/tools/remotecommand"
 )
 
-//
 var watcher *fsnotify.Watcher
 var clientset *kubernetes.Clientset
 var targetPod *k8score.Pod
@@ -28,7 +27,6 @@ var config *rest.Config
 var sourceDir string
 var destDir string
 
-// main
 func main() {
 
 	src := flag.String("source", "/home/scallopboat/tempWatch", "Full path on local file system")
@@ -86,7 +84,11 @@ func main() {
 	}
 
 	// validate the dest dir exists
-	checkContainerDir(destDir)
+	err = checkContainerDir(destDir)
+	if err != nil {
+		fmt.Println("Directory doesn't exist", err)
+		panic(err.Error())
+	}
 
 	// creates a new file watcher
 	watcher, _ = fsnotify.NewWatcher()
@@ -100,6 +102,13 @@ func main() {
 	}
 
 	// TODO Before monitoring, need to sync the entire dir structure to remote
+	// validate the dest dir exists
+
+	err = syncLocalToRemote()
+	if err != nil {
+		fmt.Println("Directory doesn't exist", err)
+		panic(err.Error())
+	}
 
 	if err := filepath.Walk(sourceDir, watchDir); err != nil {
 		fmt.Println("ERROR", err)
@@ -187,7 +196,7 @@ func checkContainerDir(dir string) error {
 
 func copyToPod(filePath string) error {
 
-	//TODO Add param to give the option of creating the dir if it doesn't exist
+	//TODO Need to test to see if a dir was created, so it can be created
 	dat, err := ioutil.ReadFile(filePath)
 	filename := strings.Replace(filePath, sourceDir, "", 1)
 	if err != nil {
@@ -254,6 +263,7 @@ func exec(command []string) (string, error) {
 	fmt.Println("Request URL:", req.URL().String())
 
 	exec, err := remotecommand.NewSPDYExecutor(config, "POST", req.URL())
+
 	if err != nil {
 		panic(err)
 	}
@@ -266,9 +276,19 @@ func exec(command []string) (string, error) {
 		Tty:    false,
 	})
 
+	if stderr.String() != "" {
+		fmt.Println("CMD Called:", strings.Join(command, " "))
+		fmt.Println("ERROR:", stderr.String())
+	}
+
 	if err != nil {
 		panic(err)
 	}
 
 	return stdout.String(), nil
+}
+
+func syncLocalToRemote() error {
+	// Take everything in the source dir, and copy it up to remote.
+	return nil
 }
