@@ -3,17 +3,8 @@ module github.com/skallopboat
 go 1.12
 
 require (
-	github.com/fsnotify/fsnotify v1.4.7
-	github.com/gogo/protobuf v1.2.1 // indirect
-	github.com/golang/protobuf v1.3.1 // indirect
-	github.com/googleapis/gnostic v0.3.0 // indirect
-	golang.org/x/crypto v0.0.0-20190611184440-5c40567a22f8 // indirect
-	golang.org/x/net v0.0.0-20190620200207-3b0461eec859 // indirect
-	golang.org/x/sys v0.0.0-20190626221950-04f50cda93cb // indirect
-	gopkg.in/inf.v0 v0.9.1 // indirect
-	k8s.io/api v0.0.0-20190703205437-39734b2a72fe
-	k8s.io/apimachinery v0.0.0-20190703205208-4cfb76a8bf76
-	k8s.io/client-go v0.0.0-20190620085101-78d2af792bab
-	k8s.io/klog v0.3.3 // indirect
-	k8s.io/utils v0.0.0-20190607212802-c55fbcfc754a // indirect
+	github.com/fsnotify/fsnotify v1.4.9
+	k8s.io/api v0.20.0-alpha.2
+	k8s.io/apimachinery v0.20.0-alpha.2
+	k8s.io/client-go v0.20.0-alpha.2
 )
